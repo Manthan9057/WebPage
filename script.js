@@ -1,184 +1,281 @@
 /**
- * script.js — Mascot Pipes Pro
- * Handles:
- *  1. Sticky header (appears on scroll down, hides on scroll up)
- *  2. Hero image carousel (prev/next + thumbnail click)
- *  3. Image zoom on hover (lens + result preview)
- *  4. FAQ accordion
- *  5. Manufacturing process tabs
- *  6. Applications carousel (arrow controls)
- *  7. Hamburger mobile menu
- *  8. Back-to-top button
+ * script.js — Mangalam HDPE Pipes
+ *
+ * BUGS FIXED vs previous version:
+ *  1. Auto-scroll-to-top: removed scrollIntoView() from goToSlide()
+ *     — that was scrolling the whole page, not just the thumbnail row
+ *  2. Duplicate headers: main-header is now position:fixed (not sticky)
+ *     — JS adds/removes .pushed class to shift it below sticky-bar
+ *     — only one header is ever visible at a time
+ *  3. Hamburger: creates mobile-nav once, never duplicates it
  */
 
-document.addEventListener('DOMContentLoaded', () => {
+(function () {
+  'use strict';
 
   /* ============================================================
-     1. STICKY HEADER
-     - Appears when user scrolls PAST the hero fold (first viewport)
-     - Disappears when user scrolls BACK UP above that point
-     - Smooth CSS transition handles animation
+     CACHED DOM REFS
   ============================================================ */
-  const stickyHeader = document.getElementById('stickyHeader');
+  const stickyBar    = document.getElementById('stickyBar');
   const mainHeader   = document.getElementById('mainHeader');
-  let lastScrollY = 0;
-  let heroHeight  = 0;
+  const backTopBtn   = document.getElementById('backTop');
+  const carPrev      = document.getElementById('carPrev');
+  const carNext      = document.getElementById('carNext');
+  const carStage     = document.getElementById('carouselStage');
+  const thumbRow     = document.getElementById('thumbRow');
+  const faqList      = document.getElementById('faqList');
+  const processTabsEl= document.getElementById('processTabs');
+  const appRail      = document.getElementById('appRail');
+  const appPrevBtn   = document.getElementById('appPrev');
+  const appNextBtn   = document.getElementById('appNext');
+  const mainHamburger= document.getElementById('mainHamburger');
+  const stickyHam    = document.getElementById('stickyHamburger');
+  const mobileNav    = document.getElementById('mobileNav');
 
-  function getSectionHeight() {
-    const hero = document.getElementById('hero');
-    heroHeight = hero ? hero.offsetHeight : window.innerHeight;
+/* ============================================================
+   1. STICKY BAR + MAIN HEADER MANAGEMENT
+   - Show sticky header after first fold
+   - Hide when scrolling upward
+   - Smooth transitions
+============================================================ */
+let lastScrollY = window.scrollY;
+let heroBottom = 0;
+let ticking = false;
+
+function measureHero() {
+  const hero = document.getElementById('hero');
+
+  if (hero) {
+    heroBottom = hero.offsetTop + hero.offsetHeight - 120;
   }
-  getSectionHeight();
-  window.addEventListener('resize', getSectionHeight);
+}
 
-  function handleScroll() {
-    const currentY = window.scrollY;
+measureHero();
 
-    if (currentY > heroHeight && currentY > lastScrollY) {
-      // Scrolling DOWN past hero → show sticky
-      stickyHeader.classList.add('visible');
-      stickyHeader.setAttribute('aria-hidden', 'false');
-    } else if (currentY < lastScrollY || currentY <= heroHeight) {
-      // Scrolling UP or back near top → hide sticky
-      stickyHeader.classList.remove('visible');
-      stickyHeader.setAttribute('aria-hidden', 'true');
+function updateStickyHeader() {
+  const currentY = window.scrollY;
+
+  /* Show only after hero section */
+  if (currentY > heroBottom) {
+
+    /* Scrolling down → show sticky */
+    if (currentY > lastScrollY + 5) {
+      stickyBar.classList.add('visible');
+      mainHeader.classList.add('pushed');
     }
 
-    lastScrollY = currentY;
-
-    // Back to top button
-    const backTop = document.getElementById('backTop');
-    if (backTop) {
-      backTop.classList.toggle('visible', currentY > 400);
+    /* Scrolling up → hide sticky */
+    else if (currentY < lastScrollY - 5) {
+      stickyBar.classList.remove('visible');
+      mainHeader.classList.remove('pushed');
     }
+
+  } else {
+    stickyBar.classList.remove('visible');
+    mainHeader.classList.remove('pushed');
   }
 
-  window.addEventListener('scroll', handleScroll, { passive: true });
+  lastScrollY = currentY;
+  ticking = false;
+}
 
+function onScroll() {
+  if (!ticking) {
+    window.requestAnimationFrame(updateStickyHeader);
+    ticking = true;
+  }
+
+  /* Back-to-top button */
+  if (backTopBtn) {
+    backTopBtn.classList.toggle('visible', window.scrollY > 400);
+  }
+}
+
+window.addEventListener('scroll', onScroll, { passive: true });
+window.addEventListener('resize', measureHero);
 
   /* ============================================================
-     2. HERO CAROUSEL — Slide switching
+     2. BACK TO TOP
+        — smooth scroll to top, does NOT trigger on page load
   ============================================================ */
-  const slides   = document.querySelectorAll('.carousel-slide');
-  const thumbs   = document.querySelectorAll('.thumb');
-  const prevBtn  = document.getElementById('carPrev');
-  const nextBtn  = document.getElementById('carNext');
-  let currentSlide = 0;
-
-  function goToSlide(index) {
-    // Bounds wrapping
-    if (index < 0) index = slides.length - 1;
-    if (index >= slides.length) index = 0;
-
-    // Deactivate old
-    slides[currentSlide].classList.remove('active');
-    thumbs[currentSlide].classList.remove('active');
-
-    // Activate new
-    currentSlide = index;
-    slides[currentSlide].classList.add('active');
-    thumbs[currentSlide].classList.add('active');
-
-    // Scroll thumb into view on mobile
-    thumbs[currentSlide].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  if (backTopBtn) {
+    backTopBtn.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   }
 
-  if (prevBtn) prevBtn.addEventListener('click', () => goToSlide(currentSlide - 1));
-  if (nextBtn) nextBtn.addEventListener('click', () => goToSlide(currentSlide + 1));
+  /* ============================================================
+     3. HAMBURGER / MOBILE NAV
+        — works for both main-header and sticky-bar hamburgers
+        — toggles mobileNav once (no duplicate injection)
+  ============================================================ */
+  function toggleMobileNav(open) {
+    if (!mobileNav) return;
+    mobileNav.classList.toggle('open', open);
+    if (mainHamburger) {
+      mainHamburger.classList.toggle('open', open);
+      mainHamburger.setAttribute('aria-expanded', open);
+    }
+    if (stickyHam) {
+      stickyHam.classList.toggle('open', open);
+      stickyHam.setAttribute('aria-expanded', open);
+    }
+  }
 
-  thumbs.forEach(thumb => {
-    thumb.addEventListener('click', () => {
-      const idx = parseInt(thumb.dataset.index, 10);
-      goToSlide(idx);
+  if (mainHamburger) {
+    mainHamburger.addEventListener('click', function () {
+      const isOpen = mobileNav && mobileNav.classList.contains('open');
+      toggleMobileNav(!isOpen);
+    });
+  }
+  if (stickyHam) {
+    stickyHam.addEventListener('click', function () {
+      const isOpen = mobileNav && mobileNav.classList.contains('open');
+      toggleMobileNav(!isOpen);
+    });
+  }
+
+  /* Close mobile nav when any link clicked */
+  if (mobileNav) {
+    mobileNav.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', function () { toggleMobileNav(false); });
+    });
+  }
+
+  /* Close on Esc */
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') toggleMobileNav(false);
+  });
+
+  /* ============================================================
+     4. IMAGE CAROUSEL
+        — goToSlide() does NOT call scrollIntoView (that was
+          the cause of the auto-scroll-to-top bug)
+        — thumbnail strip is scrolled by adjusting scrollLeft
+          directly on the thumb-row container
+  ============================================================ */
+  const slides = carStage ? Array.from(carStage.querySelectorAll('.slide')) : [];
+  const thumbs = thumbRow ? Array.from(thumbRow.querySelectorAll('.thumb')) : [];
+  let activeIdx = 0;
+  let autoTimer  = null;
+
+  function goToSlide(idx) {
+    /* Wrap around */
+    if (idx < 0) idx = slides.length - 1;
+    if (idx >= slides.length) idx = 0;
+
+    /* Deactivate current */
+    if (slides[activeIdx]) slides[activeIdx].classList.remove('active');
+    if (thumbs[activeIdx]) thumbs[activeIdx].classList.remove('active');
+
+    activeIdx = idx;
+
+    /* Activate new */
+    if (slides[activeIdx]) slides[activeIdx].classList.add('active');
+    if (thumbs[activeIdx]) thumbs[activeIdx].classList.add('active');
+
+    /*
+      Scroll thumbnail strip so active thumb is visible.
+      We use scrollLeft on the container — NOT scrollIntoView()
+      which scrolls the entire page.
+    */
+    if (thumbRow && thumbs[activeIdx]) {
+      const thumb    = thumbs[activeIdx];
+      const rowRect  = thumbRow.getBoundingClientRect();
+      const tRect    = thumb.getBoundingClientRect();
+      const offset   = tRect.left - rowRect.left + thumbRow.scrollLeft - rowRect.width / 2 + tRect.width / 2;
+      thumbRow.scrollTo({ left: offset, behavior: 'smooth' });
+    }
+  }
+
+  function startAuto() {
+    stopAuto();
+    autoTimer = setInterval(function () { goToSlide(activeIdx + 1); }, 4000);
+  }
+  function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  }
+
+  if (carPrev) carPrev.addEventListener('click', function () { goToSlide(activeIdx - 1); stopAuto(); startAuto(); });
+  if (carNext) carNext.addEventListener('click', function () { goToSlide(activeIdx + 1); stopAuto(); startAuto(); });
+
+  thumbs.forEach(function (thumb) {
+    thumb.addEventListener('click', function () {
+      goToSlide(parseInt(thumb.dataset.index, 10));
+      stopAuto(); startAuto();
     });
   });
 
-  // Auto-advance every 4s
-  let autoPlay = setInterval(() => goToSlide(currentSlide + 1), 4000);
-  const carouselMain = document.getElementById('carouselMain');
-  if (carouselMain) {
-    carouselMain.addEventListener('mouseenter', () => clearInterval(autoPlay));
-    carouselMain.addEventListener('mouseleave', () => {
-      autoPlay = setInterval(() => goToSlide(currentSlide + 1), 4000);
-    });
+  /* Pause auto-play while user hovers over carousel */
+  if (carStage) {
+    carStage.addEventListener('mouseenter', stopAuto);
+    carStage.addEventListener('mouseleave', startAuto);
   }
 
+  startAuto();
 
   /* ============================================================
-     3. IMAGE ZOOM — Lens + Floating result panel on hover
-     Each .carousel-slide has a .zoom-lens and .zoom-result
-     The zoom result shows the area under the cursor magnified
+     5. IMAGE ZOOM (lens + floating result on carousel images)
   ============================================================ */
-  const ZOOM_FACTOR = 2.5; // magnification level
+  const ZOOM = 2.8;
 
-  slides.forEach(slide => {
+  slides.forEach(function (slide) {
     const img    = slide.querySelector('img');
     const lens   = slide.querySelector('.zoom-lens');
     const result = slide.querySelector('.zoom-result');
-    const resImg = result ? result.querySelector('img') : null;
+    const rImg   = result ? result.querySelector('img') : null;
 
-    if (!img || !lens || !result || !resImg) return;
+    if (!img || !lens || !result || !rImg) return;
 
-    function moveLens(e) {
-      // Only active on the currently visible slide
+    slide.addEventListener('mousemove', function (e) {
       if (!slide.classList.contains('active')) return;
 
-      e.preventDefault();
-      const rect = img.getBoundingClientRect();
+      const rect  = img.getBoundingClientRect();
+      let x = e.clientX - rect.left;
+      let y = e.clientY - rect.top;
 
-      // Mouse position relative to image
-      let x = (e.clientX || e.touches[0].clientX) - rect.left;
-      let y = (e.clientY || e.touches[0].clientY) - rect.top;
+      const lw = lens.offsetWidth  / 2;
+      const lh = lens.offsetHeight / 2;
 
-      const lensW = lens.offsetWidth  / 2;
-      const lensH = lens.offsetHeight / 2;
+      x = Math.max(lw, Math.min(x, rect.width  - lw));
+      y = Math.max(lh, Math.min(y, rect.height - lh));
 
-      // Clamp within image bounds
-      x = Math.max(lensW, Math.min(x, rect.width  - lensW));
-      y = Math.max(lensH, Math.min(y, rect.height - lensH));
+      lens.style.left = (x - lw) + 'px';
+      lens.style.top  = (y - lh) + 'px';
 
-      // Position lens (centred on cursor)
-      lens.style.left = `${x - lensW}px`;
-      lens.style.top  = `${y - lensH}px`;
+      const px = (x / rect.width)  * 100;
+      const py = (y / rect.height) * 100;
 
-      // The result image is zoomed — adjust background-position
-      // (We use object-fit cover + transform on result img instead)
-      const pctX = (x / rect.width)  * 100;
-      const pctY = (y / rect.height) * 100;
+      rImg.style.transformOrigin = px + '% ' + py + '%';
+      rImg.style.transform = 'scale(' + ZOOM + ')';
+    });
 
-      resImg.style.transformOrigin = `${pctX}% ${pctY}%`;
-      resImg.style.transform = `scale(${ZOOM_FACTOR})`;
-    }
-
-    slide.addEventListener('mousemove', moveLens);
-    slide.addEventListener('mouseleave', () => {
-      resImg.style.transform = 'scale(1)';
+    slide.addEventListener('mouseleave', function () {
+      rImg.style.transform = 'scale(1)';
     });
   });
 
-
   /* ============================================================
-     4. FAQ ACCORDION
+     6. FAQ ACCORDION
   ============================================================ */
-  const faqList = document.getElementById('faqList');
   if (faqList) {
-    faqList.addEventListener('click', e => {
-      const btn = e.target.closest('.faq-q');
+    faqList.addEventListener('click', function (e) {
+      const btn  = e.target.closest('.faq-btn');
       if (!btn) return;
 
-      const item    = btn.closest('.faq-item');
-      const isOpen  = item.classList.contains('open');
-      const ico     = btn.querySelector('.faq-ico');
+      const item   = btn.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      const ico    = btn.querySelector('.faq-ico');
 
-      // Close all
-      faqList.querySelectorAll('.faq-item.open').forEach(el => {
+      /* Close all */
+      faqList.querySelectorAll('.faq-item.open').forEach(function (el) {
         el.classList.remove('open');
-        el.querySelector('.faq-q').setAttribute('aria-expanded', 'false');
-        const i = el.querySelector('.faq-ico');
+        el.querySelector('.faq-btn').setAttribute('aria-expanded', 'false');
+        var i = el.querySelector('.faq-ico');
         if (i) i.textContent = '+';
       });
 
-      // Open clicked (if wasn't already open)
+      /* Toggle clicked */
       if (!isOpen) {
         item.classList.add('open');
         btn.setAttribute('aria-expanded', 'true');
@@ -187,123 +284,52 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-
   /* ============================================================
-     5. MANUFACTURING PROCESS TABS
+     7. PROCESS TABS
   ============================================================ */
-  const processTabs = document.getElementById('processTabs');
-  if (processTabs) {
-    processTabs.addEventListener('click', e => {
-      const tab = e.target.closest('.ptab');
+  if (processTabsEl) {
+    processTabsEl.addEventListener('click', function (e) {
+      const tab = e.target.closest('.tab');
       if (!tab) return;
 
-      // Deactivate all tabs and panels
-      processTabs.querySelectorAll('.ptab').forEach(t => {
+      processTabsEl.querySelectorAll('.tab').forEach(function (t) {
         t.classList.remove('active');
         t.setAttribute('aria-selected', 'false');
       });
-      document.querySelectorAll('.ppanel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(function (p) {
+        p.classList.remove('active');
+      });
 
-      // Activate clicked tab and its panel
       tab.classList.add('active');
       tab.setAttribute('aria-selected', 'true');
-      const panel = document.getElementById(`tab-${tab.dataset.tab}`);
+      var panel = document.getElementById('tab-' + tab.dataset.tab);
       if (panel) panel.classList.add('active');
     });
   }
 
-
   /* ============================================================
-     6. APPLICATIONS CAROUSEL (horizontal scroll with arrows)
+     8. APPLICATIONS CAROUSEL (arrow scroll)
   ============================================================ */
-  const appCarousel = document.getElementById('appCarousel');
-  const appPrev     = document.getElementById('appPrev');
-  const appNext     = document.getElementById('appNext');
-
-  if (appCarousel && appPrev && appNext) {
-    // Width of one card + gap
-    const scrollAmount = () => {
-      const card = appCarousel.querySelector('.app-card');
+  if (appRail && appPrevBtn && appNextBtn) {
+    function getScrollAmt() {
+      var card = appRail.querySelector('.app-card');
       return card ? card.offsetWidth + 16 : 276;
-    };
-
-    appNext.addEventListener('click', () => {
-      appCarousel.scrollBy({ left: scrollAmount(), behavior: 'smooth' });
-    });
-    appPrev.addEventListener('click', () => {
-      appCarousel.scrollBy({ left: -scrollAmount(), behavior: 'smooth' });
-    });
-
-    // Update button states
-    function updateAppBtns() {
-      appPrev.style.opacity = appCarousel.scrollLeft <= 0 ? '0.4' : '1';
-      const maxScroll = appCarousel.scrollWidth - appCarousel.clientWidth;
-      appNext.style.opacity = appCarousel.scrollLeft >= maxScroll - 4 ? '0.4' : '1';
     }
-    appCarousel.addEventListener('scroll', updateAppBtns, { passive: true });
-    updateAppBtns();
-  }
 
-
-  /* ============================================================
-     7. HAMBURGER MOBILE MENU
-  ============================================================ */
-  const hamburger  = document.getElementById('hamburger');
-  const mainHeaderEl = document.getElementById('mainHeader');
-
-  if (hamburger) {
-    hamburger.addEventListener('click', () => {
-      const isOpen = hamburger.classList.toggle('open');
-      hamburger.setAttribute('aria-expanded', isOpen);
-      // Inject mobile menu below nav
-      let mobileMenu = mainHeaderEl.querySelector('.mobile-menu');
-      if (!mobileMenu) {
-        mobileMenu = document.createElement('div');
-        mobileMenu.className = 'mobile-menu';
-        mobileMenu.innerHTML = `
-          <a href="#about">About Us</a>
-          <a href="#products">Products</a>
-          <a href="#contact" class="btn btn-primary">Contact Us</a>
-        `;
-        mainHeaderEl.appendChild(mobileMenu);
-      }
-      mobileMenu.classList.toggle('open', isOpen);
-
-      // Close menu when link clicked
-      mobileMenu.querySelectorAll('a').forEach(link => {
-        link.addEventListener('click', () => {
-          hamburger.classList.remove('open');
-          hamburger.setAttribute('aria-expanded', 'false');
-          mobileMenu.classList.remove('open');
-        });
-      });
+    appNextBtn.addEventListener('click', function () {
+      appRail.scrollBy({ left: getScrollAmt(), behavior: 'smooth' });
     });
-  }
-
-
-  /* ============================================================
-     8. BACK TO TOP
-  ============================================================ */
-  const backTop = document.getElementById('backTop');
-  if (backTop) {
-    backTop.addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    appPrevBtn.addEventListener('click', function () {
+      appRail.scrollBy({ left: -getScrollAmt(), behavior: 'smooth' });
     });
-  }
 
-
-  /* ============================================================
-     9. KEYBOARD / ACCESSIBILITY — close mobile menu on Esc
-  ============================================================ */
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      const mobileMenu = document.querySelector('.mobile-menu.open');
-      if (mobileMenu) {
-        mobileMenu.classList.remove('open');
-        hamburger && hamburger.classList.remove('open');
-        hamburger && hamburger.setAttribute('aria-expanded', 'false');
-      }
+    function updateCtrlOpacity() {
+      var max = appRail.scrollWidth - appRail.clientWidth;
+      appPrevBtn.style.opacity = appRail.scrollLeft <= 4      ? '0.35' : '1';
+      appNextBtn.style.opacity = appRail.scrollLeft >= max - 4 ? '0.35' : '1';
     }
-  });
+    appRail.addEventListener('scroll', updateCtrlOpacity, { passive: true });
+    updateCtrlOpacity();
+  }
 
-}); // end DOMContentLoaded
+}());
